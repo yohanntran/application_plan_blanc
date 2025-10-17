@@ -738,8 +738,7 @@ traitement_donnees_complet <- function(simulation = F){
   # pwet
   colnames(Base_PB_incorrect)=c("Identité","Numéro de téléphone", "Hôpital", "Fonction", "Message d'origine","Disponibilité","Contact")
   
-  Base_PB = Base_PB %>% 
-    filter(`Disponibilité` != "réponse incorrecte")
+
   
   Base_PB_aide_soignant = Base_PB %>% 
     filter(str_detect(Fonction, '^aide'))
@@ -755,7 +754,6 @@ traitement_donnees_complet <- function(simulation = F){
     filter(str_detect(Fonction, '^chir'))
   Base_PB_pilot = Base_PB %>% 
     filter(str_detect(Fonction, '^pilot'))
-  # pwet
   Base_PB_secu = Base_PB %>% 
     filter(str_detect(Fonction, '^secu'))
   Base_PB_ibode = Base_PB %>% 
@@ -765,6 +763,9 @@ traitement_donnees_complet <- function(simulation = F){
   
   Base_PB_autre = Base_PB %>% 
     filter(!str_detect(Fonction, '^aide|^ash|^as/ash|^medecin|^arm|^cadre|^chir|^pilot|^secu|^ibode|^ide|^secu'))
+  
+  Base_PB = Base_PB %>% 
+    filter(`Disponibilité` != "réponse incorrecte")
   
   # Base_PB_total <- bind_rows(Base_PB, Base_PB_incorrect, pas_present %>% 
   #                              rename(`Message d'origine` = `Message d'origine`)) 
@@ -847,14 +848,36 @@ traitement_donnees_complet <- function(simulation = F){
   Base_PB_total <- bind_rows(Base_PB, Base_PB_incorrect, pas_present_a_ajouter %>% 
                                rename(`Message d'origine` = `Message d'origine`)) 
   
+  # Définir l'ordre des disponibilités
+  dispo_levels <- c(
+    "sur place", 
+    "disponible en <30 min", 
+    "disponible dans l'heure", 
+    "disponible dans les 3h",
+    "disponible dans les 6h",
+    "disponible dans les 12h",
+    "Inconnu",          # on gère Inconnu dans le tri par Identité aussi
+    "réponse incorrecte" # toujours à la fin
+  )
+  
+  Base_PB_total <- Base_PB_total %>%
+    mutate(
+      Disponibilité = factor(Disponibilité, levels = dispo_levels)
+    ) %>%
+    arrange(
+      # Mettre "réponse incorrecte" à la fin
+      Disponibilité == "réponse incorrecte",
+      Disponibilité,               # ordre des disponibilités
+      Identité == "Inconnu",       # mettre Inconnu à la fin dans chaque dispo
+      Identité                     # tri normal des autres noms
+    )
+  
   nb_personne_total <- nrow(Base_PB_total)
   pourcentage_reponse_total <- paste0(nb_personne_total, "/", nombre_personnel,
                                       " (", round((nb_personne_total/nombre_personnel)*100,1), "%)")
   nb_personne_incorrect = Base_PB_total$Disponibilité[Base_PB_total$Disponibilité == "réponse incorrecte"] %>% length
   
-  # print("Base_PB_incorrect")
-  # print(Base_PB_incorrect)
-  
+
   Base_PB_incorrect = Base_PB_total %>% 
     filter(`Disponibilité` == "réponse incorrecte")
   

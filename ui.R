@@ -32,11 +32,11 @@ ui <- dashboardPage(
   # === Sidebar ===
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Tableaux", tabName = "tableaux", icon = icon("table"))
+      menuItem("Réponses SMS", tabName = "tableaux", icon = icon("table"))
     ),
     
     div(style = "margin-left: 15px;",
-        h4("Fichier SMS du :", style = "text-decoration: underline;"),
+        h4("Date de l'import SMS :", style = "text-decoration: underline;"),
         textOutput("date_fichier", inline = TRUE)
     ),
     
@@ -99,8 +99,17 @@ ui <- dashboardPage(
     # Import fichier SMS
     fileInput(
       "file_sms", 
-      "Importez les réponses SMS",
+      "Importer les réponses SMS",
       accept = c(".xls"),
+      buttonLabel = "Parcourir...",
+      placeholder = "Aucun fichier sélectionné"
+    ),
+    
+    # Import fichier Annuaire
+    fileInput(
+      "file_annuaire", 
+      "Importer un nouvel annuaire",
+      accept = c(".xlsx"),
       buttonLabel = "Parcourir...",
       placeholder = "Aucun fichier sélectionné"
     )

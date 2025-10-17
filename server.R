@@ -2,8 +2,30 @@ server <- function(input, output, session) {
   
   rv <- reactiveValues()
   
-  
 
+  # --- Quand un fichier annuaire est importé ---
+  observeEvent(input$file_annuaire, {
+    req(input$file_annuaire)
+    
+    # Copier le fichier dans ton dossier de stockage
+    dest_file <- file.path("..","DB","annuaire.xlsx")
+    file.copy(input$file_annuaire$datapath, dest_file, overwrite = TRUE)
+    
+    # Relancer le script de traitement des données
+    source("global.R", local = TRUE)
+    
+    # Recharger les données
+    charger_donnees()
+    
+    # Afficher notification
+    showNotification(
+      "Nouvel annuaire importé avec succès !", 
+      type = "message",  # peut être "message", "warning", "error"
+      duration = 5       # durée en secondes
+    )
+  })
+  
+  
   # --- Initialisation de la date du fichier existant ---
   fichier_sms <- file.path("..","DB","reponsesSMS.xls")
   if (file.exists(fichier_sms)) {
@@ -59,7 +81,6 @@ server <- function(input, output, session) {
   # --- Initialisation automatique au démarrage ---
   charger_donnees()
   
-  # --- Quand un fichier est importé, on met à jour les données ---
   observeEvent(input$file_sms, {
     req(input$file_sms)
     
@@ -77,6 +98,13 @@ server <- function(input, output, session) {
     
     # Recharger les données
     charger_donnees()
+    
+    # Afficher notification
+    showNotification(
+      "Nouvelles réponses SMS importées avec succès !",
+      type = "message",
+      duration = 5
+    )
   })
   
   
