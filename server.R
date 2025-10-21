@@ -7,23 +7,93 @@ server <- function(input, output, session) {
   observeEvent(input$file_annuaire, {
     req(input$file_annuaire)
     
-    # Copier le fichier dans ton dossier de stockage
-    dest_file <- file.path("..","DB","annuaire.xlsx")
+    # Vérification stricte de l'extension
+    ext <- tolower(tools::file_ext(input$file_annuaire$name))
+    if (ext != "xlsx") {
+      showNotification(
+        "Erreur : veuillez importer un fichier Excel au format .xlsx uniquement.",
+        type = "error",
+        duration = 5
+      )
+      return(NULL)
+    }
+    
+    # Vérification de la signature du fichier
+    raw_header <- readBin(input$file_annuaire$datapath, what = "raw", n = 4)
+    sig <- as.integer(raw_header)
+    
+    # Signatures connues
+    sig_zip <- as.integer(as.raw(c(0x50, 0x4B, 0x03, 0x04))) # vrai .xlsx (ZIP)
+    sig_xls <- as.integer(as.raw(c(0xD0, 0xCF, 0x11, 0xE0))) # ancien .xls (OLE)
+    
+    if (identical(sig, sig_xls)) {
+      showNotification(
+        "Erreur : ce fichier semble être un ancien format .xls renommé en .xlsx.",
+        type = "error",
+        duration = 6
+      )
+      return(NULL)
+    }
+    
+    if (!identical(sig, sig_zip)) {
+      showNotification(
+        "Erreur : le fichier ne correspond pas à un vrai fichier Excel (.xlsx).",
+        type = "error",
+        duration = 6
+      )
+      return(NULL)
+    }
+    
+    # Vérification que la feuille 'Contacts' existe
+    tryCatch({
+      sheets <- readxl::excel_sheets(input$file_annuaire$datapath)
+    }, error = function(e) {
+      showNotification(
+        "Erreur : le fichier Excel est illisible ou corrompu.",
+        type = "error",
+        duration = 6
+      )
+      return(NULL)
+    })
+    
+    if (!"Contacts" %in% sheets) {
+      showNotification(
+        "Erreur : le fichier doit contenir une feuille nommée 'Contacts'.",
+        type = "error",
+        duration = 6
+      )
+      return(NULL)
+    }
+    
+    # Test de lecture pour s'assurer que le contenu est exploitable
+    tryCatch({
+      readxl::read_excel(input$file_annuaire$datapath, sheet = "Contacts", n_max = 1)
+    }, error = function(e) {
+      showNotification(
+        paste("Erreur : la feuille 'Contacts' est illisible ou corrompue.", e$message),
+        type = "error",
+        duration = 6
+      )
+      return(NULL)
+    })
+    
+    # Copie du fichier validé
+    dest_file <- file.path("..", "DB", "annuaire.xlsx")
     file.copy(input$file_annuaire$datapath, dest_file, overwrite = TRUE)
     
-    # Relancer le script de traitement des données
+    # Recharger le contexte et les données
     source("global.R", local = TRUE)
-    
-    # Recharger les données
     charger_donnees()
     
-    # Afficher notification
+    # Notification de succès
     showNotification(
-      "Nouvel annuaire importé avec succès !", 
-      type = "message",  # peut être "message", "warning", "error"
-      duration = 5       # durée en secondes
+      "Nouvel annuaire importé avec succès !",
+      type = "message",
+      duration = 5
     )
   })
+  
+  
   
   
   # --- Initialisation de la date du fichier existant ---
@@ -42,8 +112,53 @@ server <- function(input, output, session) {
   
   # --- Fonction interne pour charger les données ---
   charger_donnees <- function() {
-    resultats <- traitement_donnees_complet()
+    resultats <- tryCatch(
+      {
+        # Essaye le traitement normal
+        traitement_donnees_complet()
+      },
+      error = function(e) {
+        message("⚠️ Erreur lors du traitement des données, création de tableaux vides...")
+        # Création de listes et data.frames vides
+        empty_df <- data.frame()
+        list(
+          Base_PB                = empty_df,
+          Base_PB_incorrect      = empty_df,
+          pas_present            = empty_df,
+          pas_present_a_ajouter  = empty_df,
+          Base_PB_total          = empty_df,
+          Base_PB_aide_soignant  = empty_df,
+          Base_PB_ash            = empty_df,
+          Base_PB_medecin        = empty_df,
+          Base_PB_arm            = empty_df,
+          Base_PB_cadre          = empty_df,
+          Base_PB_chir           = empty_df,
+          Base_PB_pilot          = empty_df,
+          Base_PB_secu           = empty_df,
+          Base_PB_ibode          = empty_df,
+          Base_PB_ide            = empty_df,
+          Base_PB_autre          = empty_df,
+          nombre_personnel       = 0,
+          nb_personne_total      = 0,
+          nb_personne_incorrect  = 0,
+          pourcentage_reponse_total = "0/0 (0%)",
+          dispo_h_gap            = 0,
+          dispo_h_briancon       = 0,
+          dispo_h_sisteron       = 0,
+          dispo_dans_h_total     = 0,
+          nb_personne_disponible = 0,
+          nb_personne_30min      = 0,
+          nb_personne_1h         = 0,
+          nb_personne_3h         = 0,
+          nb_personne_6h         = 0,
+          nb_personne_12h        = 0,
+          nb_personne_no_reponse = 0,
+          nb_personne_pas_present= 0
+        )
+      }
+    )
     
+    # Mise à jour des reactiveValues
     rv$Base_PB                <- resultats$Base_PB
     rv$Base_PB_incorrect      <- resultats$Base_PB_incorrect
     rv$pas_present            <- resultats$pas_present
@@ -81,25 +196,60 @@ server <- function(input, output, session) {
   # --- Initialisation automatique au démarrage ---
   charger_donnees()
   
+  
   observeEvent(input$file_sms, {
     req(input$file_sms)
     
-    # Copier le fichier dans ton dossier de stockage
-    dest_file <- file.path("..","DB","reponsesSMS.xls")
+    # Vérification stricte de l'extension
+    ext <- tolower(tools::file_ext(input$file_sms$name))
+    if (ext != "xls") {
+      showNotification(
+        "Erreur : veuillez importer un fichier Excel au format .xls uniquement.",
+        type = "error",
+        duration = 5
+      )
+      return(NULL)
+    }
+    
+    # Vérification du contenu du fichier (signature binaire du format .xls)
+    # Les fichiers .xls commencent par le code hexadécimal D0 CF 11 E0 (format OLE)
+    raw_header <- readBin(input$file_sms$datapath, what = "raw", n = 4)
+    valid_xls_signature <- identical(raw_header, as.raw(c(0xD0, 0xCF, 0x11, 0xE0)))
+    
+    if (!valid_xls_signature) {
+      showNotification(
+        "Erreur : le fichier ne correspond pas à un vrai fichier Excel (.xls).",
+        type = "error",
+        duration = 6
+      )
+      return(NULL)
+    }
+    
+    # Vérifier la lisibilité avec readxl
+    tryCatch({
+      df_test <- readxl::read_excel(input$file_sms$datapath, n_max = 1)
+    }, error = function(e) {
+      showNotification(
+        paste("Erreur : le fichier Excel est illisible ou corrompu.", e$message),
+        type = "error",
+        duration = 6
+      )
+      return(NULL)
+    })
+    
+    # Copie du fichier valide
+    dest_file <- file.path("..", "DB", "reponsesSMS.xls")
     file.copy(input$file_sms$datapath, dest_file, overwrite = TRUE)
     
-    # Obtenir la date de dernière modification du fichier réel
+    # Mise à jour de la date
     rv$last_modif <- file.info(dest_file)$mtime
-    
-    # Mettre à jour le texte dans l'UI
     output$date_fichier <- renderText({
       format(rv$last_modif, "%d/%m/%Y %H:%M:%S")
     })
     
-    # Recharger les données
+    # Rechargement des données
     charger_donnees()
     
-    # Afficher notification
     showNotification(
       "Nouvelles réponses SMS importées avec succès !",
       type = "message",
@@ -111,7 +261,7 @@ server <- function(input, output, session) {
   
   # --- Fonction utilitaire pour créer les tableaux ---
   render_dt_table <- function(data) {
-    datatable(
+    dt <- datatable(
       data,
       extensions = c('Buttons'),
       class = 'cell-border compact',
@@ -133,17 +283,25 @@ server <- function(input, output, session) {
       filter = list(position = 'top', clear = FALSE),
       editable = list(target = "column", disable = list(columns = c(0,1,2,3,4))),
       rownames = FALSE
-    ) %>% 
-      formatStyle(
-        'Disponibilité',
-        target = 'row',
-        backgroundColor = styleEqual(
-          c("sur place","disponible en <30 min","disponible dans l'heure","disponible dans les 3h",
-            "disponible dans les 6h", "disponible dans les 12h","réponse incorrecte"),
-          c("#FFFFFF","#F0EDCF","#FDE767","#F3B95F","#EE9322","#C08261","#D83F31")
+    )
+    
+    # Appliquer le format de style seulement si la colonne existe
+    if("Disponibilité" %in% colnames(data)) {
+      dt <- dt %>% 
+        formatStyle(
+          'Disponibilité',
+          target = 'row',
+          backgroundColor = styleEqual(
+            c("sur place","disponible en <30 min","disponible dans l'heure","disponible dans les 3h",
+              "disponible dans les 6h","disponible dans les 12h","réponse incorrecte"),
+            c("#FFFFFF","#F0EDCF","#FDE767","#F3B95F","#EE9322","#C08261","#D83F31")
+          )
         )
-      )
+    }
+    
+    return(dt)
   }
+  
   
   render_dt_table_2 <- function(data) {
     req(!is.null(data))
