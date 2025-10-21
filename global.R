@@ -521,8 +521,8 @@ traitement_SMS_safe()
 traitement_donnees_complet <- function(simulation = F){
   
   # --- Fichiers ---
-  annuaire_path <- normalizePath(file.path("..", "DB", "annuaire.xlsx"), mustWork = TRUE)
-  reponsesSMS_path <- normalizePath(file.path("..", "DB", "reponsesSMS.xls"), mustWork = TRUE)
+  # annuaire_path <- normalizePath(file.path("..", "DB", "annuaire.xlsx"), mustWork = TRUE)
+  # reponsesSMS_path <- normalizePath(file.path("..", "DB", "reponsesSMS.xls"), mustWork = TRUE)
   
   # Lire les fichiers
   annuaire <- readxl::read_excel(annuaire_path, sheet = "Contacts") %>% data.frame()
@@ -1019,3 +1019,5 @@ traitement_donnees_complet <- function(simulation = F){
     nb_personne_pas_present = nb_personne_pas_present
   ))
 }
+
+

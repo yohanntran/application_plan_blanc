@@ -2,19 +2,29 @@ server <- function(input, output, session) {
   
   rv <- reactiveValues()
   
+  
+  log_import <- function(fichier, statut, message_text = "") {
+    # Fichier de log unique pour les imports
+    log_file <- file.path("..", "DB", "log.log")
+    timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    cat(paste0("[", timestamp, "] ", fichier, " - ", statut, " - ", message_text, "\n"),
+        file = log_file, append = TRUE)
+  }
 
   # --- Quand un fichier annuaire est importé ---
   observeEvent(input$file_annuaire, {
     req(input$file_annuaire)
+    fichier <- input$file_annuaire$name
     
     # Vérification stricte de l'extension
-    ext <- tolower(tools::file_ext(input$file_annuaire$name))
+    ext <- tolower(tools::file_ext(fichier))
     if (ext != "xlsx") {
       showNotification(
         "Erreur : veuillez importer un fichier Excel au format .xlsx uniquement.",
         type = "error",
         duration = 5
       )
+      log_import(fichier, "ÉCHEC", "Mauvais format (non .xlsx)")
       return(NULL)
     }
     
@@ -22,9 +32,8 @@ server <- function(input, output, session) {
     raw_header <- readBin(input$file_annuaire$datapath, what = "raw", n = 4)
     sig <- as.integer(raw_header)
     
-    # Signatures connues
-    sig_zip <- as.integer(as.raw(c(0x50, 0x4B, 0x03, 0x04))) # vrai .xlsx (ZIP)
-    sig_xls <- as.integer(as.raw(c(0xD0, 0xCF, 0x11, 0xE0))) # ancien .xls (OLE)
+    sig_zip <- as.integer(as.raw(c(0x50, 0x4B, 0x03, 0x04))) # vrai .xlsx
+    sig_xls <- as.integer(as.raw(c(0xD0, 0xCF, 0x11, 0xE0))) # ancien .xls
     
     if (identical(sig, sig_xls)) {
       showNotification(
@@ -32,6 +41,7 @@ server <- function(input, output, session) {
         type = "error",
         duration = 6
       )
+      log_import(fichier, "ÉCHEC", "Ancien .xls renommé")
       return(NULL)
     }
     
@@ -41,18 +51,20 @@ server <- function(input, output, session) {
         type = "error",
         duration = 6
       )
+      log_import(fichier, "ÉCHEC", "Signature invalide")
       return(NULL)
     }
     
     # Vérification que la feuille 'Contacts' existe
-    tryCatch({
-      sheets <- readxl::excel_sheets(input$file_annuaire$datapath)
+    sheets <- tryCatch({
+      readxl::excel_sheets(input$file_annuaire$datapath)
     }, error = function(e) {
       showNotification(
         "Erreur : le fichier Excel est illisible ou corrompu.",
         type = "error",
         duration = 6
       )
+      log_import(fichier, "ÉCHEC", "Fichier illisible")
       return(NULL)
     })
     
@@ -62,6 +74,7 @@ server <- function(input, output, session) {
         type = "error",
         duration = 6
       )
+      log_import(fichier, "ÉCHEC", "Feuille 'Contacts' absente")
       return(NULL)
     }
     
@@ -74,6 +87,7 @@ server <- function(input, output, session) {
         type = "error",
         duration = 6
       )
+      log_import(fichier, "ÉCHEC", paste("Feuille illisible :", e$message))
       return(NULL)
     })
     
@@ -91,6 +105,7 @@ server <- function(input, output, session) {
       type = "message",
       duration = 5
     )
+    log_import(fichier, "SUCCES", "Import réussi")
   })
   
   
@@ -196,23 +211,23 @@ server <- function(input, output, session) {
   # --- Initialisation automatique au démarrage ---
   charger_donnees()
   
-  
   observeEvent(input$file_sms, {
     req(input$file_sms)
+    fichier <- input$file_sms$name
     
     # Vérification stricte de l'extension
-    ext <- tolower(tools::file_ext(input$file_sms$name))
+    ext <- tolower(tools::file_ext(fichier))
     if (ext != "xls") {
       showNotification(
         "Erreur : veuillez importer un fichier Excel au format .xls uniquement.",
         type = "error",
         duration = 5
       )
+      log_import(fichier, "ÉCHEC", "Mauvais format (non .xls)")
       return(NULL)
     }
     
-    # Vérification du contenu du fichier (signature binaire du format .xls)
-    # Les fichiers .xls commencent par le code hexadécimal D0 CF 11 E0 (format OLE)
+    # Vérification de la signature binaire du format .xls
     raw_header <- readBin(input$file_sms$datapath, what = "raw", n = 4)
     valid_xls_signature <- identical(raw_header, as.raw(c(0xD0, 0xCF, 0x11, 0xE0)))
     
@@ -222,10 +237,11 @@ server <- function(input, output, session) {
         type = "error",
         duration = 6
       )
+      log_import(fichier, "ÉCHEC", "Signature invalide")
       return(NULL)
     }
     
-    # Vérifier la lisibilité avec readxl
+    # Test de lecture pour s'assurer que le contenu est exploitable
     tryCatch({
       df_test <- readxl::read_excel(input$file_sms$datapath, n_max = 1)
     }, error = function(e) {
@@ -234,10 +250,11 @@ server <- function(input, output, session) {
         type = "error",
         duration = 6
       )
+      log_import(fichier, "ÉCHEC", paste("Fichier illisible :", e$message))
       return(NULL)
     })
     
-    # Copie du fichier valide
+    # Copie du fichier validé
     dest_file <- file.path("..", "DB", "reponsesSMS.xls")
     file.copy(input$file_sms$datapath, dest_file, overwrite = TRUE)
     
@@ -255,7 +272,9 @@ server <- function(input, output, session) {
       type = "message",
       duration = 5
     )
+    log_import(fichier, "SUCCES", "Import réussi")
   })
+  
   
   
   
