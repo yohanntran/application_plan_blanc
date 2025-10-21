@@ -141,7 +141,7 @@ traitement_SMS <- function(simulation = FALSE) {
   #Plusieurs lignes pour certains médecin
   for(i in annuaire$nom_prenom %>% unique){
     tmp = annuaire %>% 
-      filter(nom_prenom == i) %>% 
+      dplyr::filter(nom_prenom == i) %>% 
       arrange(Date.de.modification)
     tmp = tail(tmp,1) # on sélectionne la ligne de l'annuaire la plus recente
     recent_annuaire = rbind(recent_annuaire,tmp)
@@ -149,7 +149,7 @@ traitement_SMS <- function(simulation = FALSE) {
   
   #On enlève les messages vides
   reponseSMS = reponseSMS %>% 
-    filter(Message != "")
+    dplyr::filter(Message != "")
   
   reponseSMS = distinct(reponseSMS)
   
@@ -157,7 +157,7 @@ traitement_SMS <- function(simulation = FALSE) {
   last_reponseSMS=data.frame()
   for(i in reponseSMS$nom_prenom %>% unique){
     tmp = reponseSMS %>% 
-      filter(nom_prenom == i) %>% 
+      dplyr::filter(nom_prenom == i) %>% 
       arrange(Date.de.réponse)
     tmp = tail(tmp,1)
     last_reponseSMS = rbind(last_reponseSMS,tmp)
@@ -172,7 +172,7 @@ traitement_SMS <- function(simulation = FALSE) {
   
   #étude des médecins non/mal enregistrés dans l'annuaire
   pas_present = last_reponseSMS %>% 
-    filter(num_reponse%in% setdiff(last_reponseSMS$num_reponse,Base_PB$num_reponse)) %>% 
+    dplyr::filter(num_reponse%in% setdiff(last_reponseSMS$num_reponse,Base_PB$num_reponse)) %>% 
     dplyr::select(-num_reponse, -nom_prenom)
   pas_present$`Date.de.réponse` <- as.POSIXct(pas_present$`Date.de.réponse`, format = "%d/%m/%Y %H:%M:%S")
   
@@ -346,38 +346,38 @@ traitement_SMS <- function(simulation = FALSE) {
   Base_PB <- data.frame(sapply(Base_PB, as.factor, simplify=FALSE))
   
   Base_PB_incorrect = Base_PB %>% 
-    filter(`Disponibilité` == "réponse incorrecte")
+    dplyr::filter(`Disponibilité` == "réponse incorrecte")
   
   # pwet
   colnames(Base_PB_incorrect)=c("Identité","Numéro de téléphone", "Hôpital", "Fonction", "Message d'origine","Disponibilité","Contact")
   
   Base_PB = Base_PB %>% 
-    filter(`Disponibilité` != "réponse incorrecte")
+    dplyr::filter(`Disponibilité` != "réponse incorrecte")
   
   Base_PB_aide_soignant = Base_PB %>% 
-    filter(str_detect(Fonction, '^aide'))
+    dplyr::filter(str_detect(Fonction, '^aide'))
   Base_PB_ash = Base_PB %>% 
-    filter(str_detect(Fonction, '^ash|^as/ash'))
+    dplyr::filter(str_detect(Fonction, '^ash|^as/ash'))
   Base_PB_medecin = Base_PB %>% 
-    filter(str_detect(Fonction, '^medecin'))
+    dplyr::filter(str_detect(Fonction, '^medecin'))
   Base_PB_arm = Base_PB %>% 
-    filter(str_detect(Fonction, '^arm'))
+    dplyr::filter(str_detect(Fonction, '^arm'))
   Base_PB_cadre = Base_PB %>% 
-    filter(str_detect(Fonction, '^cadre'))
+    dplyr::filter(str_detect(Fonction, '^cadre'))
   Base_PB_chir = Base_PB %>% 
-    filter(str_detect(Fonction, '^chir'))
+    dplyr::filter(str_detect(Fonction, '^chir'))
   Base_PB_pilot = Base_PB %>% 
-    filter(str_detect(Fonction, '^pilot'))
+    dplyr::filter(str_detect(Fonction, '^pilot'))
   # pwet
   Base_PB_secu = Base_PB %>% 
-    filter(str_detect(Fonction, '^secu'))
+    dplyr::filter(str_detect(Fonction, '^secu'))
   Base_PB_ibode = Base_PB %>% 
-    filter(str_detect(Fonction, '^ibode'))
+    dplyr::filter(str_detect(Fonction, '^ibode'))
   Base_PB_ide = Base_PB %>% 
-    filter(str_detect(Fonction, '^ide'))
+    dplyr::filter(str_detect(Fonction, '^ide'))
   
   Base_PB_autre = Base_PB %>% 
-    filter(!str_detect(Fonction, '^aide|^ash|^as/ash|^medecin|^arm|^cadre|^chir|^pilot|^secu|^ibode|^ide|^secu'))
+    dplyr::filter(!str_detect(Fonction, '^aide|^ash|^as/ash|^medecin|^arm|^cadre|^chir|^pilot|^secu|^ibode|^ide|^secu'))
   
   Base_PB_total <- bind_rows(Base_PB, Base_PB_incorrect, pas_present %>%
                                rename(`Message d'origine` = `Message d'origine`))
@@ -421,18 +421,18 @@ traitement_SMS <- function(simulation = FALSE) {
   
   
   dispo_h_gap = Base_PB %>% 
-    filter(`Hôpital` == "Gap") %>% 
-    filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
+    dplyr::filter(`Hôpital` == "Gap") %>% 
+    dplyr::filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
   dispo_h_gap = dispo_h_gap[1]
   
   dispo_h_briancon = Base_PB %>% 
-    filter(`Hôpital` == "Briançon") %>% 
-    filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
+    dplyr::filter(`Hôpital` == "Briançon") %>% 
+    dplyr::filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
   dispo_h_briancon = dispo_h_briancon[1]
   
   dispo_h_sisteron = Base_PB %>% 
-    filter(`Hôpital` == "Sisteron") %>% 
-    filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
+    dplyr::filter(`Hôpital` == "Sisteron") %>% 
+    dplyr::filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
   dispo_h_sisteron = dispo_h_sisteron[1]
   
   dispo_dans_h_total=dispo_h_gap+dispo_h_briancon+dispo_h_sisteron
@@ -620,7 +620,7 @@ traitement_donnees_complet <- function(simulation = F){
   #Plusieurs lignes pour certains médecin
   for(i in annuaire$nom_prenom %>% unique){
     tmp = annuaire %>% 
-      filter(nom_prenom == i) %>% 
+      dplyr::filter(nom_prenom == i) %>% 
       arrange(Date.de.modification)
     tmp = tail(tmp,1) # on sélectionne la ligne de l'annuaire la plus recente
     recent_annuaire = rbind(recent_annuaire,tmp)
@@ -628,7 +628,7 @@ traitement_donnees_complet <- function(simulation = F){
   
   #On enlève les messages vides
   reponseSMS = reponseSMS %>% 
-    filter(Message != "")
+    dplyr::filter(Message != "")
   
   reponseSMS = distinct(reponseSMS)
   
@@ -636,7 +636,7 @@ traitement_donnees_complet <- function(simulation = F){
   last_reponseSMS=data.frame()
   for(i in reponseSMS$nom_prenom %>% unique){
     tmp = reponseSMS %>% 
-      filter(nom_prenom == i) %>% 
+      dplyr::filter(nom_prenom == i) %>% 
       arrange(Date.de.réponse)
     tmp = tail(tmp,1)
     last_reponseSMS = rbind(last_reponseSMS,tmp)
@@ -651,7 +651,7 @@ traitement_donnees_complet <- function(simulation = F){
   
   #étude des médecins non/mal enregistrés dans l'annuaire
   pas_present = last_reponseSMS %>% 
-    filter(num_reponse%in% setdiff(last_reponseSMS$num_reponse,Base_PB$num_reponse)) %>% 
+    dplyr::filter(num_reponse%in% setdiff(last_reponseSMS$num_reponse,Base_PB$num_reponse)) %>% 
     dplyr::select(-num_reponse, -nom_prenom)
   pas_present$`Date.de.réponse` <- as.POSIXct(pas_present$`Date.de.réponse`, format = "%d/%m/%Y %H:%M:%S")
   
@@ -825,7 +825,7 @@ traitement_donnees_complet <- function(simulation = F){
   Base_PB <- data.frame(sapply(Base_PB, as.factor, simplify=FALSE))
   
   Base_PB_incorrect = Base_PB %>% 
-    filter(`Disponibilité` == "réponse incorrecte")
+    dplyr::filter(`Disponibilité` == "réponse incorrecte")
   
 
   colnames(Base_PB_incorrect)=c("Identité","Numéro de téléphone", "Hôpital", "Fonction", "Message d'origine","Disponibilité","Contact")
@@ -833,31 +833,31 @@ traitement_donnees_complet <- function(simulation = F){
 
   
   Base_PB_aide_soignant = Base_PB %>% 
-    filter(str_detect(Fonction, '^aide'))
+    dplyr::filter(str_detect(Fonction, '^aide'))
   Base_PB_ash = Base_PB %>% 
-    filter(str_detect(Fonction, '^ash|^as/ash'))
+    dplyr::filter(str_detect(Fonction, '^ash|^as/ash'))
   Base_PB_medecin = Base_PB %>% 
-    filter(str_detect(Fonction, '^medecin'))
+    dplyr::filter(str_detect(Fonction, '^medecin'))
   Base_PB_arm = Base_PB %>% 
-    filter(str_detect(Fonction, '^arm'))
+    dplyr::filter(str_detect(Fonction, '^arm'))
   Base_PB_cadre = Base_PB %>% 
-    filter(str_detect(Fonction, '^cadre'))
+    dplyr::filter(str_detect(Fonction, '^cadre'))
   Base_PB_chir = Base_PB %>% 
-    filter(str_detect(Fonction, '^chir'))
+    dplyr::filter(str_detect(Fonction, '^chir'))
   Base_PB_pilot = Base_PB %>% 
-    filter(str_detect(Fonction, '^pilot'))
+    dplyr::filter(str_detect(Fonction, '^pilot'))
   Base_PB_secu = Base_PB %>% 
-    filter(str_detect(Fonction, '^secu'))
+    dplyr::filter(str_detect(Fonction, '^secu'))
   Base_PB_ibode = Base_PB %>% 
-    filter(str_detect(Fonction, '^ibode'))
+    dplyr::filter(str_detect(Fonction, '^ibode'))
   Base_PB_ide = Base_PB %>% 
-    filter(str_detect(Fonction, '^ide'))
+    dplyr::filter(str_detect(Fonction, '^ide'))
   
   Base_PB_autre = Base_PB %>% 
-    filter(!str_detect(Fonction, '^aide|^ash|^as/ash|^medecin|^arm|^cadre|^chir|^pilot|^secu|^ibode|^ide|^secu'))
+    dplyr::filter(!str_detect(Fonction, '^aide|^ash|^as/ash|^medecin|^arm|^cadre|^chir|^pilot|^secu|^ibode|^ide|^secu'))
   
   Base_PB = Base_PB %>% 
-    filter(`Disponibilité` != "réponse incorrecte")
+    dplyr::filter(`Disponibilité` != "réponse incorrecte")
   
   # Base_PB_total <- bind_rows(Base_PB, Base_PB_incorrect, pas_present %>% 
   #                              rename(`Message d'origine` = `Message d'origine`)) 
@@ -901,18 +901,18 @@ traitement_donnees_complet <- function(simulation = F){
   
   
   dispo_h_gap = Base_PB %>% 
-    filter(`Hôpital` == "Gap") %>% 
-    filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
+    dplyr::filter(`Hôpital` == "Gap") %>% 
+    dplyr::filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
   dispo_h_gap = dispo_h_gap[1]
   
   dispo_h_briancon = Base_PB %>% 
-    filter(`Hôpital` == "Briançon") %>% 
-    filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
+    dplyr::filter(`Hôpital` == "Briançon") %>% 
+    dplyr::filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
   dispo_h_briancon = dispo_h_briancon[1]
   
   dispo_h_sisteron = Base_PB %>% 
-    filter(`Hôpital` == "Sisteron") %>% 
-    filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
+    dplyr::filter(`Hôpital` == "Sisteron") %>% 
+    dplyr::filter(`Disponibilité` %in% c("sur place","disponible en <30 min","disponible dans l'heure")) %>% dim()
   dispo_h_sisteron = dispo_h_sisteron[1]
   
   dispo_dans_h_total=dispo_h_gap+dispo_h_briancon+dispo_h_sisteron
@@ -971,7 +971,7 @@ traitement_donnees_complet <- function(simulation = F){
   
 
   Base_PB_incorrect = Base_PB_total %>% 
-    filter(`Disponibilité` == "réponse incorrecte")
+    dplyr::filter(`Disponibilité` == "réponse incorrecte")
   
   colnames(Base_PB_ash)=c("Identité","Numéro de téléphone", "Hôpital", "Fonction", "Message d'origine","Disponibilité","Contact")
   colnames(Base_PB_aide_soignant)=c("Identité","Numéro de téléphone", "Hôpital", "Fonction", "Message d'origine","Disponibilité","Contact")

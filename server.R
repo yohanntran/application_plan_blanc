@@ -287,7 +287,20 @@ server <- function(input, output, session) {
       selection = "none",
       options = list(
         columnDefs = list(list(visible = FALSE, targets = c(6))),
-        language = fr,
+	language = list(        # Traduction des textes du tableau
+                  search = "Rechercher :",    
+                  lengthMenu = "Afficher _MENU_ éléments",  
+                  info = "Affichage de _START_ à _END_ sur _TOTAL_ éléments",  
+                  infoEmpty = "Aucun élément à afficher",  
+                  infoFiltered = "(filtré à partir de _MAX_ éléments)",  
+                  zeroRecords = "Aucun enregistrement correspondant",  
+                  paginate = list(
+                    "first" = "Premier",  
+                    "previous" = "Précédent",  
+                    "next" = "Suivant",  
+                    "last" = "Dernier"  
+                  )
+                ),
         scrollX = TRUE,
         pageLength = -1,
         paging = TRUE,
@@ -336,13 +349,26 @@ server <- function(input, output, session) {
       class = 'cell-border compact',
       selection = "none",
       options = list(
+	language = list(        # Traduction des textes du tableau
+                  search = "Rechercher :",    
+                  lengthMenu = "Afficher _MENU_ éléments",  
+                  info = "Affichage de _START_ à _END_ sur _TOTAL_ éléments",  
+                  infoEmpty = "Aucun élément à afficher",  
+                  infoFiltered = "(filtré à partir de _MAX_ éléments)",  
+                  zeroRecords = "Aucun enregistrement correspondant",  
+                  paginate = list(
+                    "first" = "Premier",  
+                    "previous" = "Précédent",  
+                    "next" = "Suivant",  
+                    "last" = "Dernier"  
+                  )
+                ),
         scrollX = TRUE,
         pageLength = -1,
         paging = TRUE,
         searching = TRUE,
         dom = 'Bfrtip',
-        buttons = c('excel', 'pdf'),
-        language = fr
+        buttons = c('excel', 'pdf')
       )
     ) %>% 
       formatStyle(
