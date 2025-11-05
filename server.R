@@ -1,426 +1,315 @@
+# server.R
+
 server <- function(input, output, session) {
   
+  # --- Reactive Values ---
+  # Use a reactiveValues object to store data that can be accessed and updated
+  # throughout the app. This is the central state of the application.
   rv <- reactiveValues()
   
-  
+  # --- Logging Function ---
+  # A simple logger to record file import events. This is useful for debugging.
   log_import <- function(fichier, statut, message_text = "") {
-    # Fichier de log unique pour les imports
-    log_file <- file.path("..", "DB", "log.log")
+    # Use the absolute path for the log file.
+    log_file <- file.path("/srv/DB", "log.log")
+    # log_file <- file.path("//NETUSERS/Partages/Intra-Service/CHB/dim/Statistiques/APP PLAN BLANC/DB", "log.log")
+    
     timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-    cat(paste0("[", timestamp, "] ", fichier, " - ", statut, " - ", message_text, "\n"),
-        file = log_file, append = TRUE)
+    tryCatch({
+      cat(paste0("[", timestamp, "] ", fichier, " - ", statut, " - ", message_text, "\n"),
+          file = log_file, append = TRUE)
+    }, error = function(e) {
+      message(paste("Failed to write to log file:", e$message))
+    })
   }
 
-  # --- Quand un fichier annuaire est importé ---
+  # --- Data Loading Function ---
+  # This function calls the main data processing function from global.R and
+  # handles potential errors, ensuring the app doesn't crash.
+  charger_donnees <- function() {
+    # Wrap the data processing in a tryCatch block to handle any unexpected errors.
+    resultats <- tryCatch({
+      traitement_donnees_complet(simulation = simulation) # Call the main processing function
+    }, error = function(e) {
+      # If an error occurs, log it and return a list of empty/zeroed values.
+      message(paste("⚠️ Erreur critique lors du traitement des données:", e$message))
+      showNotification("Erreur critique lors du traitement des données. Vérifiez les fichiers et les logs.", type = "error", duration = 10)
+      
+      # Return a default 'empty' state for the application.
+      empty_df <- data.frame()
+      list(
+        Base_PB_total = empty_df, Base_PB_incorrect = empty_df, pas_present = empty_df,
+        Base_PB_aide_soignant = empty_df, Base_PB_ash = empty_df, Base_PB_medecin = empty_df,
+        Base_PB_arm = empty_df, Base_PB_cadre = empty_df, Base_PB_chir = empty_df,
+        Base_PB_pilot = empty_df, Base_PB_secu = empty_df, Base_PB_ibode = empty_df,
+        Base_PB_ide = empty_df, Base_PB_autre = empty_df,
+        nombre_personnel = 0, nb_personne_total = 0, pourcentage_reponse_total = "0/0 (0%)",
+        dispo_h_gap = 0, dispo_h_briancon = 0, dispo_h_sisteron = 0, dispo_dans_h_total = 0,
+        nb_personne_disponible = 0, nb_personne_30min = 0, nb_personne_1h = 0,
+        nb_personne_3h = 0, nb_personne_6h = 0, nb_personne_12h = 0,
+        nb_personne_incorrect = 0, nb_personne_pas_present = 0
+      )
+    })
+    
+    # Populate the reactiveValues with the results from the data processing.
+    for (name in names(resultats)) {
+      rv[[name]] <- resultats[[name]]
+    }
+  }
+
+  # --- Initial Data Load ---
+  # Load data once when the application starts.
+  charger_donnees()
+
+  # --- File Import Observers ---
+  
+  # Observer for 'annuaire.xlsx' file upload.
   observeEvent(input$file_annuaire, {
     req(input$file_annuaire)
-    fichier <- input$file_annuaire$name
+    info <- input$file_annuaire
     
-    # Vérification stricte de l'extension
-    ext <- tolower(tools::file_ext(fichier))
-    if (ext != "xlsx") {
-      showNotification(
-        "Erreur : veuillez importer un fichier Excel au format .xlsx uniquement.",
-        type = "error",
-        duration = 5
-      )
-      log_import(fichier, "ÉCHEC", "Mauvais format (non .xlsx)")
-      return(NULL)
+    # Robust validation for the uploaded file.
+    if (tolower(tools::file_ext(info$name)) != "xlsx") {
+      showNotification("Erreur : Le fichier doit être au format .xlsx.", type = "error")
+      log_import(info$name, "ÉCHEC", "Format incorrect")
+      return()
     }
     
-    # Vérification de la signature du fichier
-    raw_header <- readBin(input$file_annuaire$datapath, what = "raw", n = 4)
-    sig <- as.integer(raw_header)
-    
-    sig_zip <- as.integer(as.raw(c(0x50, 0x4B, 0x03, 0x04))) # vrai .xlsx
-    sig_xls <- as.integer(as.raw(c(0xD0, 0xCF, 0x11, 0xE0))) # ancien .xls
-    
-    if (identical(sig, sig_xls)) {
-      showNotification(
-        "Erreur : ce fichier semble être un ancien format .xls renommé en .xlsx.",
-        type = "error",
-        duration = 6
-      )
-      log_import(fichier, "ÉCHEC", "Ancien .xls renommé")
-      return(NULL)
-    }
-    
-    if (!identical(sig, sig_zip)) {
-      showNotification(
-        "Erreur : le fichier ne correspond pas à un vrai fichier Excel (.xlsx).",
-        type = "error",
-        duration = 6
-      )
-      log_import(fichier, "ÉCHEC", "Signature invalide")
-      return(NULL)
-    }
-    
-    # Vérification que la feuille 'Contacts' existe
-    sheets <- tryCatch({
-      readxl::excel_sheets(input$file_annuaire$datapath)
-    }, error = function(e) {
-      showNotification(
-        "Erreur : le fichier Excel est illisible ou corrompu.",
-        type = "error",
-        duration = 6
-      )
-      log_import(fichier, "ÉCHEC", "Fichier illisible")
-      return(NULL)
-    })
-    
-    if (!"Contacts" %in% sheets) {
-      showNotification(
-        "Erreur : le fichier doit contenir une feuille nommée 'Contacts'.",
-        type = "error",
-        duration = 6
-      )
-      log_import(fichier, "ÉCHEC", "Feuille 'Contacts' absente")
-      return(NULL)
-    }
-    
-    # Test de lecture pour s'assurer que le contenu est exploitable
+    # Attempt to copy the file and reload data.
     tryCatch({
-      readxl::read_excel(input$file_annuaire$datapath, sheet = "Contacts", n_max = 1)
-    }, error = function(e) {
-      showNotification(
-        paste("Erreur : la feuille 'Contacts' est illisible ou corrompue.", e$message),
-        type = "error",
-        duration = 6
-      )
-      log_import(fichier, "ÉCHEC", paste("Feuille illisible :", e$message))
-      return(NULL)
-    })
-    
-    # Copie du fichier validé
-    dest_file <- file.path("..", "DB", "annuaire.xlsx")
-    file.copy(input$file_annuaire$datapath, dest_file, overwrite = TRUE)
-    
-    # Recharger le contexte et les données
-    source("global.R", local = TRUE)
-    charger_donnees()
-    
-    # Notification de succès
-    showNotification(
-      "Nouvel annuaire importé avec succès !",
-      type = "message",
-      duration = 5
-    )
-    log_import(fichier, "SUCCES", "Import réussi")
-  })
-  
-  
-  
-  
-  # --- Initialisation de la date du fichier existant ---
-  fichier_sms <- file.path("..","DB","reponsesSMS.xls")
-  if (file.exists(fichier_sms)) {
-    rv$last_modif <- file.info(fichier_sms)$mtime
-  } else {
-    rv$last_modif <- NA
-  }
-  
-  # --- Output texte pour afficher la date ---
-  output$date_fichier <- renderText({
-    req(rv$last_modif)
-    format(rv$last_modif, "%d/%m/%Y %H:%M:%S")
-  })
-  
-  # --- Fonction interne pour charger les données ---
-  charger_donnees <- function() {
-    resultats <- tryCatch(
-      {
-        # Essaye le traitement normal
-        traitement_donnees_complet()
-      },
-      error = function(e) {
-        message("⚠️ Erreur lors du traitement des données, création de tableaux vides...")
-        # Création de listes et data.frames vides
-        empty_df <- data.frame()
-        list(
-          Base_PB                = empty_df,
-          Base_PB_incorrect      = empty_df,
-          pas_present            = empty_df,
-          pas_present_a_ajouter  = empty_df,
-          Base_PB_total          = empty_df,
-          Base_PB_aide_soignant  = empty_df,
-          Base_PB_ash            = empty_df,
-          Base_PB_medecin        = empty_df,
-          Base_PB_arm            = empty_df,
-          Base_PB_cadre          = empty_df,
-          Base_PB_chir           = empty_df,
-          Base_PB_pilot          = empty_df,
-          Base_PB_secu           = empty_df,
-          Base_PB_ibode          = empty_df,
-          Base_PB_ide            = empty_df,
-          Base_PB_autre          = empty_df,
-          nombre_personnel       = 0,
-          nb_personne_total      = 0,
-          nb_personne_incorrect  = 0,
-          pourcentage_reponse_total = "0/0 (0%)",
-          dispo_h_gap            = 0,
-          dispo_h_briancon       = 0,
-          dispo_h_sisteron       = 0,
-          dispo_dans_h_total     = 0,
-          nb_personne_disponible = 0,
-          nb_personne_30min      = 0,
-          nb_personne_1h         = 0,
-          nb_personne_3h         = 0,
-          nb_personne_6h         = 0,
-          nb_personne_12h        = 0,
-          nb_personne_no_reponse = 0,
-          nb_personne_pas_present= 0
-        )
+      # Check for 'Contacts' sheet before committing.
+      sheets <- readxl::excel_sheets(info$datapath)
+      if (!"Contacts" %in% sheets) {
+        showNotification("Erreur : La feuille 'Contacts' est introuvable dans le fichier.", type = "error")
+        log_import(info$name, "ÉCHEC", "Feuille 'Contacts' absente")
+        return()
       }
-    )
-    
-    # Mise à jour des reactiveValues
-    rv$Base_PB                <- resultats$Base_PB
-    rv$Base_PB_incorrect      <- resultats$Base_PB_incorrect
-    rv$pas_present            <- resultats$pas_present
-    rv$pas_present_a_ajouter  <- resultats$pas_present_a_ajouter
-    rv$Base_PB_total          <- resultats$Base_PB_total
-    rv$Base_PB_aide_soignant  <- resultats$Base_PB_aide_soignant
-    rv$Base_PB_ash            <- resultats$Base_PB_ash
-    rv$Base_PB_medecin        <- resultats$Base_PB_medecin
-    rv$Base_PB_arm            <- resultats$Base_PB_arm
-    rv$Base_PB_cadre          <- resultats$Base_PB_cadre
-    rv$Base_PB_chir           <- resultats$Base_PB_chir
-    rv$Base_PB_pilot          <- resultats$Base_PB_pilot
-    rv$Base_PB_secu           <- resultats$Base_PB_secu
-    rv$Base_PB_ibode          <- resultats$Base_PB_ibode
-    rv$Base_PB_ide            <- resultats$Base_PB_ide
-    rv$Base_PB_autre          <- resultats$Base_PB_autre
-    rv$nombre_personnel       <- resultats$nombre_personnel
-    rv$nb_personne_total      <- resultats$nb_personne_total
-    rv$nb_personne_incorrect  <- resultats$nb_personne_incorrect
-    rv$pourcentage_reponse_total <- resultats$pourcentage_reponse_total
-    rv$dispo_h_gap            <- resultats$dispo_h_gap
-    rv$dispo_h_briancon       <- resultats$dispo_h_briancon
-    rv$dispo_h_sisteron       <- resultats$dispo_h_sisteron
-    rv$dispo_dans_h_total     <- resultats$dispo_dans_h_total
-    rv$nb_personne_disponible <- resultats$nb_personne_disponible
-    rv$nb_personne_30min      <- resultats$nb_personne_30min
-    rv$nb_personne_1h         <- resultats$nb_personne_1h
-    rv$nb_personne_3h         <- resultats$nb_personne_3h
-    rv$nb_personne_6h         <- resultats$nb_personne_6h
-    rv$nb_personne_12h        <- resultats$nb_personne_12h
-    rv$nb_personne_no_reponse <- resultats$nb_personne_no_reponse
-    rv$nb_personne_pas_present<- resultats$nb_personne_pas_present
-  }
+      
+      file.copy(info$datapath, annuaire_path, overwrite = TRUE)
+      log_import(info$name, "SUCCÈS", "Annuaire importé")
+      showNotification("Nouvel annuaire importé avec succès !", type = "message")
+      charger_donnees() # Reload all data
+      
+    }, error = function(e) {
+      showNotification(paste("Erreur à la lecture du fichier annuaire:", e$message), type = "error")
+      log_import(info$name, "ÉCHEC", e$message)
+    })
+  })
   
-  # --- Initialisation automatique au démarrage ---
-  charger_donnees()
-  
+  # Observer for 'reponsesSMS.xls' file upload.
   observeEvent(input$file_sms, {
     req(input$file_sms)
-    fichier <- input$file_sms$name
+    info <- input$file_sms
     
-    # Vérification stricte de l'extension
-    ext <- tolower(tools::file_ext(fichier))
-    if (ext != "xls") {
-      showNotification(
-        "Erreur : veuillez importer un fichier Excel au format .xls uniquement.",
-        type = "error",
-        duration = 5
-      )
-      log_import(fichier, "ÉCHEC", "Mauvais format (non .xls)")
-      return(NULL)
+    # Validation for .xls format.
+    if (tolower(tools::file_ext(info$name)) != "xls") {
+      showNotification("Erreur : Le fichier doit être au format .xls.", type = "error")
+      log_import(info$name, "ÉCHEC", "Format incorrect")
+      return()
     }
-    
-    # Vérification de la signature binaire du format .xls
-    raw_header <- readBin(input$file_sms$datapath, what = "raw", n = 4)
-    valid_xls_signature <- identical(raw_header, as.raw(c(0xD0, 0xCF, 0x11, 0xE0)))
-    
-    if (!valid_xls_signature) {
-      showNotification(
-        "Erreur : le fichier ne correspond pas à un vrai fichier Excel (.xls).",
-        type = "error",
-        duration = 6
-      )
-      log_import(fichier, "ÉCHEC", "Signature invalide")
-      return(NULL)
-    }
-    
-    # Test de lecture pour s'assurer que le contenu est exploitable
+
     tryCatch({
-      df_test <- readxl::read_excel(input$file_sms$datapath, n_max = 1)
+      # A simple read test to ensure file is not corrupt.
+      readxl::read_excel(info$datapath, n_max = 1)
+      
+      file.copy(info$datapath, reponsesSMS_path, overwrite = TRUE)
+      log_import(info$name, "SUCCÈS", "SMS importés")
+      showNotification("Nouvelles réponses SMS importées avec succès !", type = "message")
+      
+      # Update the file modification date displayed in the UI.
+      rv$last_modif <- file.info(reponsesSMS_path)$mtime
+      
+      charger_donnees() # Reload all data
+      
     }, error = function(e) {
-      showNotification(
-        paste("Erreur : le fichier Excel est illisible ou corrompu.", e$message),
-        type = "error",
-        duration = 6
-      )
-      log_import(fichier, "ÉCHEC", paste("Fichier illisible :", e$message))
-      return(NULL)
+      showNotification(paste("Erreur à la lecture du fichier SMS:", e$message), type = "error")
+      log_import(info$name, "ÉCHEC", e$message)
     })
-    
-    # Copie du fichier validé
-    dest_file <- file.path("..", "DB", "reponsesSMS.xls")
-    file.copy(input$file_sms$datapath, dest_file, overwrite = TRUE)
-    
-    # Mise à jour de la date
-    rv$last_modif <- file.info(dest_file)$mtime
-    output$date_fichier <- renderText({
+  })
+
+  # --- UI Outputs ---
+
+  # Update the text displaying the last import date.
+  output$date_fichier <- renderText({
+    # Initialize the date on app start.
+    if (is.null(rv$last_modif) && file.exists(reponsesSMS_path)) {
+      rv$last_modif <- file.info(reponsesSMS_path)$mtime
+    }
+    if (!is.null(rv$last_modif) && !is.na(rv$last_modif)) {
       format(rv$last_modif, "%d/%m/%Y %H:%M:%S")
-    })
-    
-    # Rechargement des données
-    charger_donnees()
-    
-    showNotification(
-      "Nouvelles réponses SMS importées avec succès !",
-      type = "message",
-      duration = 5
-    )
-    log_import(fichier, "SUCCES", "Import réussi")
+    } else {
+      "Aucun fichier importé"
+    }
   })
   
-  
-  
-  
-  # --- Fonction utilitaire pour créer les tableaux ---
+  # An observer to update all sidebar text outputs at once when rv changes.
+  observe({
+    output$nb_personne_disponible <- renderText({ rv$nb_personne_disponible })
+    output$nb_personne_30min      <- renderText({ rv$nb_personne_30min })
+    output$nb_personne_1h         <- renderText({ rv$nb_personne_1h })
+    output$nb_personne_3h         <- renderText({ rv$nb_personne_3h })
+    output$nb_personne_6h         <- renderText({ rv$nb_personne_6h })
+    output$nb_personne_12h        <- renderText({ rv$nb_personne_12h })
+    output$nb_personne_incorrect  <- renderText({ rv$nb_personne_incorrect })
+    output$nb_personne_pas_present<- renderText({ rv$nb_personne_pas_present })
+    output$nb_personne_total      <- renderText({ rv$nb_personne_total })
+    output$dispo_h_gap            <- renderText({ rv$dispo_h_gap })
+    output$dispo_h_briancon       <- renderText({ rv$dispo_h_briancon })
+    output$dispo_h_sisteron       <- renderText({ rv$dispo_h_sisteron })
+    output$pourcentage_reponse_total <- renderText({ rv$pourcentage_reponse_total })
+    output$nb_annuaire            <- renderText({ rv$nombre_personnel })
+  })
+
+  # --- DataTable Rendering ---
+
+  # A centralized function to render the DataTables with consistent styling.
   render_dt_table <- function(data) {
-    dt <- datatable(
-      data,
-      extensions = c('Buttons'),
-      class = 'cell-border compact',
-      selection = "none",
-      options = list(
-        columnDefs = list(list(visible = FALSE, targets = c(6))),
-	language = list(        # Traduction des textes du tableau
-                  search = "Rechercher :",    
-                  lengthMenu = "Afficher _MENU_ éléments",  
-                  info = "Affichage de _START_ à _END_ sur _TOTAL_ éléments",  
-                  infoEmpty = "Aucun élément à afficher",  
-                  infoFiltered = "(filtré à partir de _MAX_ éléments)",  
-                  zeroRecords = "Aucun enregistrement correspondant",  
-                  paginate = list(
-                    "first" = "Premier",  
-                    "previous" = "Précédent",  
-                    "next" = "Suivant",  
-                    "last" = "Dernier"  
-                  )
-                ),
-        scrollX = TRUE,
-        pageLength = -1,
-        paging = TRUE,
-        searching = TRUE,
-        fixedColumns = TRUE,
-        autoWidth = FALSE,
-        fixedHeader = TRUE,
-        ordering = TRUE,
-        dom = 'Bfrtip',
-        buttons = c('excel', 'pdf')
-      ),
-      filter = list(position = 'top', clear = FALSE),
-      editable = list(target = "column", disable = list(columns = c(0,1,2,3,4))),
-      rownames = FALSE
-    )
+    # Ensure data is not null or empty before rendering.
+    validate(need(is.data.frame(data) && nrow(data) > 0, "Aucune donnée disponible pour cette catégorie."))
     
-    # Appliquer le format de style seulement si la colonne existe
-    if("Disponibilité" %in% colnames(data)) {
-      dt <- dt %>% 
-        formatStyle(
-          'Disponibilité',
-          target = 'row',
-          backgroundColor = styleEqual(
-            c("sur place","disponible en <30 min","disponible dans l'heure","disponible dans les 3h",
-              "disponible dans les 6h","disponible dans les 12h","réponse incorrecte"),
-            c("#FFFFFF","#F0EDCF","#FDE767","#F3B95F","#EE9322","#C08261","#D83F31")
-          )
-        )
+    # Déterminer l’index de la colonne Contact si elle existe
+    contact_idx <- which(colnames(data) == "Contact")
+    column_defs <- list()
+    if (length(contact_idx) == 1) {
+      column_defs <- list(list(visible = FALSE, targets = contact_idx - 1)) # JS index starts at 0
     }
     
-    return(dt)
-  }
-  
-  
-  render_dt_table_2 <- function(data) {
-    req(!is.null(data))
-    req("Disponibilité" %in% names(data))
-    
-    # Nettoyage éventuel des colonnes inutiles (Excel)
-    data <- data[, !names(data) %in% c("row.names", "X", "X1")]
-    
-    datatable(
+    dt <- datatable(
       data,
-      rownames = FALSE,   # supprime la colonne indices
       extensions = 'Buttons',
       class = 'cell-border compact',
       selection = "none",
+      rownames = FALSE,
+      filter = list(position = 'top', clear = FALSE),
       options = list(
-	language = list(        # Traduction des textes du tableau
-                  search = "Rechercher :",    
-                  lengthMenu = "Afficher _MENU_ éléments",  
-                  info = "Affichage de _START_ à _END_ sur _TOTAL_ éléments",  
-                  infoEmpty = "Aucun élément à afficher",  
-                  infoFiltered = "(filtré à partir de _MAX_ éléments)",  
-                  zeroRecords = "Aucun enregistrement correspondant",  
-                  paginate = list(
-                    "first" = "Premier",  
-                    "previous" = "Précédent",  
-                    "next" = "Suivant",  
-                    "last" = "Dernier"  
-                  )
-                ),
         scrollX = TRUE,
-        pageLength = -1,
-        paging = TRUE,
-        searching = TRUE,
+        pageLength = -1, # Show all rows
         dom = 'Bfrtip',
-        buttons = c('excel', 'pdf')
+        buttons = c('excel', 'pdf'),
+        columnDefs = column_defs,  # Appliquer la suppression de colonne si nécessaire
+        language = list(
+          search = "Rechercher :", lengthMenu = "Afficher _MENU_ éléments",
+          info = "Affichage de _START_ à _END_ sur _TOTAL_ éléments",
+          infoEmpty = "Aucun élément à afficher",
+          infoFiltered = "(filtré de _MAX_ éléments)",
+          zeroRecords = "Aucun enregistrement trouvé",
+          paginate = list(first = "Premier", previous = "Précédent", `next` = "Suivant", last = "Dernier")
+        )
       )
-    ) %>% 
-      formatStyle(
+    )
+    
+    # Apply conditional row coloring based on availability, if the column exists.
+    if ("Disponibilité" %in% colnames(data)) {
+      dt <- dt %>% formatStyle(
         'Disponibilité',
         target = 'row',
         backgroundColor = styleEqual(
-          c("sur place","disponible en <30 min","disponible dans l'heure",
-            "disponible dans les 3h","disponible dans les 6h",
-            "disponible dans les 12h","réponse incorrecte"),
-          c("#FFFFFF","#F0EDCF","#FDE767","#F3B95F","#EE9322","#C08261","#D83F31")
+          c("sur place", "disponible en <30 min", "disponible dans l'heure", "disponible dans les 3h",
+            "disponible dans les 6h", "disponible dans les 12h", "réponse incorrecte", "indisponible"),
+          c("#FFFFFF", "#F0EDCF", "#FDE767", "#F3B95F", "#EE9322", "#C08261", "#D83F31", "#E0E0E0")
         )
       )
+    }
+    return(dt)
   }
-  
-  
-  
-  # --- Tous les outputs textuels (sidebar) ---
+
+  # An observer to render all DataTables.
   observe({
-    output$nb_personne_disponible   <- renderText({ rv$nb_personne_disponible })
-    output$nb_personne_30min        <- renderText({ rv$nb_personne_30min })
-    output$nb_personne_1h           <- renderText({ rv$nb_personne_1h })
-    output$nb_personne_3h           <- renderText({ rv$nb_personne_3h })
-    output$nb_personne_6h           <- renderText({ rv$nb_personne_6h })
-    output$nb_personne_12h          <- renderText({ rv$nb_personne_12h })
-    output$nb_personne_incorrect    <- renderText({ rv$nb_personne_incorrect })
-    output$nb_personne_pas_present  <- renderText({ rv$nb_personne_pas_present })
-    output$nb_personne_total        <- renderText({ rv$nb_personne_total })
-    output$dispo_h_gap              <- renderText({ rv$dispo_h_gap })
-    output$dispo_h_briancon         <- renderText({ rv$dispo_h_briancon })
-    output$dispo_h_sisteron         <- renderText({ rv$dispo_h_sisteron })
-    output$pourcentage_reponse_total      <- renderText({ rv$pourcentage_reponse_total })
-    output$nb_annuaire              <- renderText({ rv$nombre_personnel })
+    output$table_total          <- renderDT({ render_dt_table(rv$Base_PB_total) })
+    output$table_ash            <- renderDT({ render_dt_table(rv$Base_PB_ash) })
+    output$table_aide           <- renderDT({ render_dt_table(rv$Base_PB_aide_soignant) })
+    output$table_ide            <- renderDT({ render_dt_table(rv$Base_PB_ide) })
+    output$table_medecin        <- renderDT({ render_dt_table(rv$Base_PB_medecin) })
+    output$table_arm            <- renderDT({ render_dt_table(rv$Base_PB_arm) })
+    output$table_cadre          <- renderDT({ render_dt_table(rv$Base_PB_cadre) })
+    output$table_chirurgien     <- renderDT({ render_dt_table(rv$Base_PB_chir) })
+    output$table_ibode          <- renderDT({ render_dt_table(rv$Base_PB_ibode) })
+    output$table_securite       <- renderDT({ render_dt_table(rv$Base_PB_secu) })
+    output$table_pilote         <- renderDT({ render_dt_table(rv$Base_PB_pilot) })
+    output$table_autres         <- renderDT({ render_dt_table(rv$Base_PB_autre) })
+    output$table_non_enregistre <- renderDT({ render_dt_table(rv$pas_present) })
+    output$table_reponse_incorrect <- renderDT({ render_dt_table(rv$Base_PB_incorrect) })
   })
   
-  # --- Tous les tableaux dynamiques ---
-  observe({
-    
-    # print(rv$Base_PB_incorrect)
-    
-    output$table_total              <- renderDT({ render_dt_table(rv$Base_PB_total) })
-    output$table_ash                <- renderDT({ render_dt_table(rv$Base_PB_ash) })
-    output$table_aide               <- renderDT({ render_dt_table(rv$Base_PB_aide_soignant) })
-    output$table_ide                <- renderDT({ render_dt_table(rv$Base_PB_ide) })
-    output$table_medecin            <- renderDT({ render_dt_table(rv$Base_PB_medecin) })
-    output$table_arm                <- renderDT({ render_dt_table(rv$Base_PB_arm) })
-    output$table_cadre              <- renderDT({ render_dt_table(rv$Base_PB_cadre) })
-    output$table_chirurgien         <- renderDT({ render_dt_table(rv$Base_PB_chir) })
-    output$table_ibode              <- renderDT({ render_dt_table(rv$Base_PB_ibode) })
-    output$table_securite           <- renderDT({ render_dt_table(rv$Base_PB_secu) })
-    output$table_pilote             <- renderDT({ render_dt_table(rv$Base_PB_pilot) })
-    output$table_autres             <- renderDT({ render_dt_table(rv$Base_PB_autre) })
-    output$table_non_enregistre     <- renderDT({ render_dt_table_2(rv$pas_present) })
-    output$table_reponse_incorrect  <- renderDT({ render_dt_table(rv$Base_PB_incorrect) })
+  
+  # Valeur réactive pour savoir si l'utilisateur est connecté
+  user_logged_in <- reactiveVal(FALSE)
+  
+  # Charger identifiants depuis le fichier .env (JSON)
+  credentials <- jsonlite::fromJSON(".env")
+  
+  # ---- UI dynamique ----
+  output$app_ui <- renderUI({
+    if (user_logged_in()) {
+      dashboard_content  # Affiche le dashboard complet
+    } else {
+      login_page         # Affiche la page de login
+    }
   })
+  
+  # ---- Observer la soumission du formulaire de login ----
+  observeEvent(input$submit_login, {
+    req(input$username, input$password)
+    
+    user_index <- which(credentials$username == input$username)
+    #pour créer un password il faut utiliser bcrypt::hashpw(as.character(password))
+    if (length(user_index) == 1 &&
+        bcrypt::checkpw(input$password, credentials$password[user_index])) {
+      
+      user_logged_in(TRUE)
+      shinyjs::hide("login_page")
+      shinyjs::show("app_content")
+      output$login_message <- renderText("")
+      
+      # 🔹 Log connexion réussie
+      log_import("auth", "SUCCESS", paste("Connexion réussie :", input$username))
+      
+      # Stocker la connexion dans localStorage pour restaurer après refresh
+      shinyjs::runjs("localStorage.setItem('user_logged_in', 'true');")
+      
+    } else {
+      output$login_message <- renderText("Identifiants incorrects ❌")
+      
+      # 🔹 Log tentative échouée
+      log_import("auth", "ERROR", paste("Échec connexion :", input$username))
+      
+      # Vider le champ mot de passe après erreur
+      shinyjs::runjs("document.getElementById('password').value = ''")
+    }
+  })
+  
+  # ---- Déconnexion ----
+  observeEvent(input$logout_button, {
+    user_logged_in(FALSE)
+    shinyjs::show("login_page")
+    shinyjs::hide("app_content")
+    
+    # 🔹 Log déconnexion
+    log_import("auth", "INFO", "Utilisateur déconnecté")
+    
+    # Supprimer la connexion locale
+    shinyjs::runjs("localStorage.removeItem('user_logged_in');")
+  })
+  
+  # ---- Restaurer la session après refresh ----
+  observe({
+    shinyjs::runjs("
+    if(localStorage.getItem('user_logged_in') === 'true') {
+      Shiny.setInputValue('restore_login', true, {priority: 'event'});
+    }
+  ")
+  })
+  
+  observeEvent(input$restore_login, {
+    user_logged_in(TRUE)
+    shinyjs::hide("login_page")
+    shinyjs::show("app_content")
+    
+    # 🔹 Log restauration session
+    log_import("auth", "INFO", "Session restaurée après refresh")
+  })
+  
 }
+
+
+

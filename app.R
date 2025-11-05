@@ -1,30 +1,17 @@
 # app.R
+# This file now serves as the main entry point for the Shiny application.
+
+# Source the global script which loads packages and defines data processing functions.
+# global.R is the heart of the application's backend logic.
+source("global.R")
+
+# Source the user interface definition.
+# ui.R defines the layout and appearance of the web application.
 source("ui.R")
+
+# Source the server-side logic.
+# server.R contains the instructions for how the app should react to user input.
 source("server.R")
 
-# Chargement intelligent des packages
-if (system.file(package = 'pacman') == "") {
-  install.packages("pacman")
-}
-library(pacman)
-
-pacman::p_load(
-  devtools,      # développement
-  rio,           # import/export
-  here,          # gestion des chemins
-  tidyverse,     # data management & viz
-  flexdashboard, # dashboards
-  shiny,         # applications interactives
-  plotly,        # graphiques interactifs
-  powerjoin,     # jointures intelligentes
-  lubridate,     # gestion des dates
-  DT,            # tableaux interactifs
-  dplyr,
-  stringr,
-  openxlsx,
-  readxl,
-  tidyverse,
-  shinydashboard
-)
-
+# Run the Shiny application by combining the UI and server components.
 shinyApp(ui = ui, server = server)
