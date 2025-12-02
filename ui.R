@@ -100,6 +100,10 @@ ui <- fluidPage(
       dashboardBody(
         useShinyjs(),
         
+        tags$head(
+          tags$link(rel = "icon", type = "image/x-icon", href = "favicon.ico")
+        ),
+        
         tags$style(HTML("
           .container-fluid {
             padding-right: 0px;
