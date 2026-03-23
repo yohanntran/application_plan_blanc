@@ -54,16 +54,13 @@ calcul_disponibilite <- function(df, dispo_levels) {
     mutate(
       Message_origine = ifelse(is.na(Message), NA_character_, paste0(Message, " (", format(Date.de.réponse, "%H:%M"), ")")),
       Message_std = case_when(
-        str_detect(Message, "^[1]$") ~ "sur place",
-        str_detect(Message, "^[2]$") ~ "disponible en <30 min",
-        str_detect(Message, "^[3]$") ~ "disponible dans l'heure",
-        str_detect(Message, "^[4]$") ~ "disponible dans les 3h",
-        str_detect(Message, "^[5]$") ~ "disponible dans les 6h",
-        str_detect(Message, "^[6]$") ~ "disponible dans les 12h",
+        str_detect(Message, "^[1]$") ~ "disponible dans l'heure",
+        str_detect(Message, "^[2]$") ~ "disponible dans les 3h",
+        str_detect(Message, "^[3]$") ~ "disponible dans les 6h",
+        str_detect(Message, "^[4]$") ~ "disponible dans les 12h",
         TRUE ~ "réponse incorrecte"  # plusieurs chiffres ou autre valeur
       ),
       `Disponibilité théorique` = case_when(
-        Message_std == "sur place" ~ Date.de.réponse,
         Message_std == "disponible en <30 min" ~ Date.de.réponse + minutes(30),
         Message_std == "disponible dans l'heure" ~ Date.de.réponse + hours(1),
         Message_std == "disponible dans les 3h" ~ Date.de.réponse + hours(3),
